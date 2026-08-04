@@ -48,7 +48,7 @@ REGRESSION_DROP_COLUMNS = {
     "Total_Trans_Amt",
     "Target",
 }
-DECISION_POLICY_VERSION = "activity-gap-v2"
+DECISION_POLICY_VERSION = "activity-gap-v3"
 DEFAULT_ACTIVITY_GAP_QUANTILE = 0.2
 SNAPSHOT_ATTRIBUTE_NAMES = tuple(PREDICTION_FIELD_MAP.keys())
 DECISION_POLICY_RULES = {
@@ -59,11 +59,15 @@ DECISION_POLICY_RULES = {
         "long_inactivity_months": 3,
         "frequent_contacts_count": 3,
         "low_relationship_count": 2,
+        "zero_revolving_balance": 0,
+        "dormant_utilization_ratio": 0.05,
     },
     "recommended_actions": {
         "high_negative_gap": "이탈 위험 우선 상담 및 거래 활성화 혜택",
         "high": "이탈 위험 고객 상담 및 관계 유지",
         "priority_activity_gap": "저활동 고객 재활성화 캠페인",
+        "frequent_contacts": "VOC 우선 검토 및 불만 원인 파악",
+        "dormant_low_utilization": "동면 고객 재활성화 캠페인 (캐시백/한도 상향 오퍼)",
         "low_premium_cluster": "우량 고객 업셀링 검토",
         "default": "일반 유지 관리",
     },
@@ -443,11 +447,24 @@ def _cluster_label_map(artifact: dict[str, Any]) -> dict[int, str]:
     return labels
 
 
-def _risk_level(probability: float, medium_threshold: float, high_threshold: float) -> str:
-    """운영용 이탈 확률 구간을 반환합니다."""
+def _risk_level(
+    probability: float,
+    medium_threshold: float,
+    high_threshold: float,
+    *,
+    activity_gap: float,
+    activity_gap_priority_threshold: float,
+) -> str:
+    """운영용 이탈 확률 구간을 반환합니다.
+
+    이탈확률만으로는 medium 구간이 거의 비어(전체의 0.4% 미만) 조기 재활성화
+    세그먼트가 사실상 작동하지 않았다. 확률로는 아직 high가 아니지만, 활동성
+    갭이 하위 분위수(activity_gap_priority_threshold) 이하로 급감한 고객도
+    medium으로 함께 분류해 "조짐이 보이는" 고객을 잡아낸다.
+    """
     if probability >= high_threshold:
         return RiskLevel.HIGH.value
-    if probability >= medium_threshold:
+    if probability >= medium_threshold or activity_gap <= activity_gap_priority_threshold:
         return RiskLevel.MEDIUM.value
     return RiskLevel.LOW.value
 
@@ -472,6 +489,10 @@ def _reason_codes(
         reasons.append("frequent_contacts")
     if float(row["Total_Relationship_Count"]) <= 2:
         reasons.append("low_relationship_count")
+    if float(row["Total_Revolving_Bal"]) <= 0:
+        reasons.append("zero_revolving_balance")
+    if float(row["Avg_Utilization_Ratio"]) < 0.05:
+        reasons.append("dormant_low_utilization")
     if activity_gap <= activity_gap_priority_threshold:
         reasons.append("priority_activity_gap")
     elif activity_gap < 0:
@@ -485,18 +506,41 @@ def _recommended_action(
     cluster_name: str,
     *,
     activity_gap_priority_threshold: float = 0.0,
+    reasons: list[str] | None = None,
 ) -> str:
-    """분석 결과를 운영 담당자가 바로 사용할 수 있는 액션 문구로 변환합니다."""
-    if risk_level == RiskLevel.HIGH.value and activity_gap < 0:
-        return "이탈 위험 우선 상담 및 거래 활성화 혜택"
+    """위험도(risk_level)를 최우선 기준으로 삼고, 그 안에서 활동성 갭·사유
+    코드를 조합해 액션을 정합니다. 위험도별로 분기를 명시적으로 나눠서
+    "위 단계에서 안 걸리면 낮은 위험도일 것" 같은 암묵적 소거 관계에
+    의존하지 않도록 합니다.
+    """
+    reasons = reasons or []
+    low_activity = activity_gap <= activity_gap_priority_threshold
+    dormant_and_zero_balance = (
+        "dormant_low_utilization" in reasons and "zero_revolving_balance" in reasons
+    )
+
     if risk_level == RiskLevel.HIGH.value:
+        if activity_gap < 0:
+            return "이탈 위험 우선 상담 및 거래 활성화 혜택"
         return "이탈 위험 고객 상담 및 관계 유지"
-    if activity_gap <= activity_gap_priority_threshold:
+
+    if risk_level == RiskLevel.MEDIUM.value:
+        if low_activity:
+            return "거래 활동 이상감지 — 사전 개입 필요"
+        if "frequent_contacts" in reasons:
+            return "VOC 우선 검토 및 불만 원인 파악"
+        return "일반 유지 관리"
+
+    # risk_level == RiskLevel.LOW.value
+    if "frequent_contacts" in reasons:
+        return "VOC 우선 검토 및 불만 원인 파악"
+    if dormant_and_zero_balance and low_activity:
+        return "동면 고객 재활성화 캠페인 (캐시백/한도 상향 오퍼)"
+    if low_activity:
         return "저활동 고객 재활성화 캠페인"
-    if cluster_name == "우량(예상이상)" and risk_level == RiskLevel.LOW.value:
+    if cluster_name == "우량(예상이상)":
         return "우량 고객 업셀링 검토"
     return "일반 유지 관리"
-
 
 def _reusable_snapshot(
     session: Session,
@@ -584,7 +628,7 @@ def run_batch(
     session: Session,
     *,
     model_dir: Path | None = None,
-    medium_threshold: float = 0.5,
+    medium_threshold: float = 0.4,
     high_threshold: float = 0.85,
     activity_gap_quantile: float = DEFAULT_ACTIVITY_GAP_QUANTILE,
     as_of_date: date | None = None,
@@ -833,7 +877,13 @@ def run_batch(
                 classification_result.iloc[index]["churn_probability"]
             )
             gap = float(activity_gap[index])
-            risk = _risk_level(probability, medium_threshold, high_threshold)
+            risk = _risk_level(
+                probability,
+                medium_threshold,
+                high_threshold,
+                activity_gap=gap,
+                activity_gap_priority_threshold=activity_gap_priority_threshold,
+            )
             cluster_name = cluster_names[index]
             reasons = _reason_codes(
                 row,
@@ -866,6 +916,7 @@ def run_batch(
                         gap,
                         cluster_name,
                         activity_gap_priority_threshold=activity_gap_priority_threshold,
+                        reasons=reasons,
                     ),
                     "reason_codes": reasons,
                     "scored_at": now,

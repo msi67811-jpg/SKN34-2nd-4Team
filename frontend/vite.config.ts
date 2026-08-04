@@ -3,7 +3,7 @@ import { defineConfig } from "vitest/config";
 
 const apiProxyTarget =
   process.env.VITE_API_PROXY_TARGET ?? "http://127.0.0.1:8000";
-const viteHost = process.env.VITE_HOST ?? "127.0.0.1";
+const viteHost = process.env.VITE_HOST ?? "0.0.0.0";
 
 export default defineConfig({
   plugins: [react()],

@@ -735,7 +735,7 @@ export interface components {
          * @description 분석 결과를 캠페인 대상으로 변환하는 표준 세그먼트입니다.
          * @enum {string}
          */
-        BulkTargetingSegment: "high_risk_retention" | "medium_reactivation" | "low_risk_upsell";
+        BulkTargetingSegment: "high_risk_retention" | "medium_reactivation" | "low_risk_upsell" | "small_balance_decline" | "dormant_full_payer" | "active_full_payer" | "stable_prime";
         /**
          * CampaignCreateRequest
          * @description 캠페인 기본 정보 생성 요청입니다.
@@ -1337,6 +1337,12 @@ export interface components {
             expected_transaction_count: number;
             /** Activity Gap */
             activity_gap: number;
+            /** Total Trans Amt */
+            total_trans_amt: number;
+            /** Card Category */
+            card_category: string;
+            /** Contacts Count 12 Mon */
+            contacts_count_12_mon: number;
             /** Cluster Name */
             cluster_name: string;
             /** Cluster Confidence */
@@ -1410,6 +1416,12 @@ export interface components {
             expected_transaction_count: number;
             /** Activity Gap */
             activity_gap: number;
+            /** Total Trans Amt */
+            total_trans_amt: number;
+            /** Card Category */
+            card_category: string;
+            /** Contacts Count 12 Mon */
+            contacts_count_12_mon: number;
             /** Cluster Name */
             cluster_name: string;
             /** Cluster Confidence */
@@ -1443,7 +1455,7 @@ export interface components {
             cluster_counts: {
                 [key: string]: number;
             };
-            /** Available Cluster Options */
+            /** Cluster Options */
             cluster_options: {
                 [key: string]: number;
             };

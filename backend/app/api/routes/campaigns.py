@@ -378,7 +378,7 @@ def list_campaign_targets_by_campaign(
     converted: bool | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> CampaignTargetListResponse:
     if db.get(Campaign, campaign_id) is None:
@@ -456,9 +456,12 @@ def list_campaign_targets(
     assigned_to_user_id: int | None = Query(default=None, ge=1),
     customer_id: int | None = Query(default=None, ge=1),
     converted: bool | None = Query(default=None),
+    sort_by_priority: bool = Query(
+        default=False, description="이탈위험 우선순위(이탈확률↓, 활동성갭↑)로 정렬"
+    ),  # ← 추가
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> CampaignTargetListResponse:
     """기존 대상 API도 캠페인·담당자·전환 필터와 서버 집계를 지원합니다."""

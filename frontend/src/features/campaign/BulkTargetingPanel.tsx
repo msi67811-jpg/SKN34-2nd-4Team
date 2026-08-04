@@ -11,21 +11,41 @@ import {
 import type { TeamMember } from "../../api/team";
 
 const segmentLabels: Record<BulkTargetingSegment, string> = {
+  small_balance_decline: "소액 잔액·거래 급감 (긴급)",
+  dormant_full_payer: "완납형 저활동 (이탈 임박)",
   high_risk_retention: "고위험 고객 리텐션",
   medium_reactivation: "중위험·활동성 하락 재활성화",
+  active_full_payer: "완납형 우량 (거래 활성화)",
   low_risk_upsell: "저위험·우량군 업셀링",
+  stable_prime: "안정 우량 (업셀링)",
 };
 
+// 담당자가 근거 없이 캠페인을 집행하지 않도록, 선정 조건과 원본 데이터에서
+// 검증된 실제 이탈률을 함께 보여줍니다(백엔드 기본 설명과 같은 내용).
 const segmentDescriptions: Record<BulkTargetingSegment, string> = {
+  small_balance_decline:
+    "리볼빙 잔액 1~499원 + 분기 거래가 0.6배 미만으로 급감한 고객. 실제 이탈률 약 90%로 가장 시급합니다.",
+  dormant_full_payer:
+    "리볼빙 잔액 0원(완납) + 연간 거래 55건 미만인 고객. 실제 이탈률 72%로, 잔액이 없어 전환 비용도 없는 상태입니다.",
   high_risk_retention: "risk_level이 high인 고객을 이탈 확률 우선순위로 선정합니다.",
-  medium_reactivation: "risk_level이 medium이고 activity_gap 하위 20% 기준 이하인 고객을 선정합니다.",
+  medium_reactivation:
+    "risk_level이 medium이고 activity_gap 하위 20% 기준 이하인 고객을 선정합니다.",
+  active_full_payer:
+    "리볼빙 잔액 0원(완납)이지만 연간 거래 55건 이상인 고객. 실제 이탈률 12%로 평균(16%)보다 낮아, 리볼빙 유도 대신 거래 리워드·교차판매 대상입니다.",
   low_risk_upsell: "risk_level이 low이고 우량(예상이상) 군집인 고객을 선정합니다.",
+  stable_prime:
+    "리볼빙 잔액 1,000~2,000원 구간 고객. 실제 이탈률 4.6%로 전 구간 중 가장 낮아 한도 상향·프리미엄 전환에 적합합니다.",
 };
 
+// 우선순위가 높은(시급한) 세그먼트부터 나열합니다.
 const segmentActions: BulkTargetingSegment[] = [
+  "small_balance_decline",
+  "dormant_full_payer",
   "high_risk_retention",
   "medium_reactivation",
+  "active_full_payer",
   "low_risk_upsell",
+  "stable_prime",
 ];
 
 type BulkTargetingPanelProps = {

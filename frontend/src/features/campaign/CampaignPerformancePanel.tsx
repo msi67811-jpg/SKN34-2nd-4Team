@@ -93,11 +93,20 @@ function BreakdownTable({
   );
 }
 
+type ComparisonTabKey = "by_campaign" | "by_segment" | "by_assignee";
+
+const COMPARISON_TABS: Array<{ key: ComparisonTabKey; label: string }> = [
+  { key: "by_campaign", label: "캠페인별 비교" },
+  { key: "by_segment", label: "세그먼트별 비교" },
+  { key: "by_assignee", label: "담당자별 비교" },
+];
+
 export function CampaignPerformancePanel({ campaignId, refreshKey }: CampaignPerformancePanelProps) {
   const [campaignPerformance, setCampaignPerformance] = useState<CampaignPerformance | null>(null);
   const [globalPerformance, setGlobalPerformance] = useState<CampaignPerformance | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+  const [activeComparisonTab, setActiveComparisonTab] = useState<ComparisonTabKey>("by_campaign");
 
   useEffect(() => {
     let isActive = true;
@@ -166,9 +175,24 @@ export function CampaignPerformancePanel({ campaignId, refreshKey }: CampaignPer
         <span>증분 유지효과 <strong>{formatPercent(metrics.incremental_retention_effect)}</strong></span>
       </div>
       <div className="campaign-performance-comparisons">
-        <BreakdownTable title="캠페인별 비교" items={globalPerformance.by_campaign} />
-        <BreakdownTable title="세그먼트별 비교" items={globalPerformance.by_segment} />
-        <BreakdownTable title="담당자별 비교" items={globalPerformance.by_assignee} />
+        <div className="campaign-performance-tabs" role="tablist" aria-label="비교 기준 선택">
+          {COMPARISON_TABS.map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              role="tab"
+              aria-selected={activeComparisonTab === tab.key}
+              className={`campaign-performance-tab${activeComparisonTab === tab.key ? " is-active" : ""}`}
+              onClick={() => setActiveComparisonTab(tab.key)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+        <BreakdownTable
+          title={COMPARISON_TABS.find((tab) => tab.key === activeComparisonTab)?.label ?? ""}
+          items={globalPerformance[activeComparisonTab]}
+        />
       </div>
     </section>
   );

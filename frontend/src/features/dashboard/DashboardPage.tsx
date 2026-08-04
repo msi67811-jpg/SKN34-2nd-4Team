@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { logout, type AuthUser } from "../../api/auth";
+import type { AuthUser } from "../../api/auth";
 import {
   createCampaignTarget,
   getCampaignPerformance,
@@ -21,15 +21,9 @@ import {
   type InsightQuery,
 } from "../../api/insights";
 import { getLatestBatch, type LatestBatch } from "../../api/modelRuns";
+import { EdaChartsSection } from "./EdaCharts";
 
 const PAGE_SIZE = 8;
-
-const roleLabels: Record<AuthUser["role"], string> = {
-  admin: "관리자",
-  analyst: "분석 담당자",
-  operations: "운영 담당자",
-  marketing: "마케팅 담당자",
-};
 
 const riskLabels: Record<CustomerInsight["risk_level"], string> = {
   low: "낮음",
@@ -59,15 +53,14 @@ const campaignStatusTransitions: Record<CampaignStatus, CampaignStatus[]> = {
   cancelled: ["cancelled"],
 };
 
+type DashboardTab = "insights" | "eda";
+
 type RiskFilter = "" | NonNullable<InsightQuery["risk_level"]>;
 type SortBy = NonNullable<InsightQuery["sort_by"]>;
 type SortOrder = NonNullable<InsightQuery["sort_order"]>;
 
 type DashboardPageProps = {
   user: AuthUser;
-  onLoggedOut: () => void;
-  onOpenCampaigns?: () => void;
-  onOpenAdminConsole?: () => void;
   showCampaignFeedback?: boolean;
 };
 
@@ -85,6 +78,12 @@ function formatDecimal(value: number): string {
   }).format(value);
 }
 
+const USD_TO_KRW_RATE = 1400;
+
+function formatWon(usdValue: number): string {
+  return `${formatNumber(Math.round(usdValue * USD_TO_KRW_RATE))}원`;
+}
+
 function formatDate(value: string): string {
   return new Intl.DateTimeFormat("ko-KR", {
     month: "short",
@@ -96,6 +95,34 @@ function formatDate(value: string): string {
 
 function formatSignedDecimal(value: number): string {
   return `${value > 0 ? "+" : ""}${formatDecimal(value)}`;
+}
+
+function getPageNumbers(currentPage: number, totalPages: number): (number | "ellipsis")[] {
+  const windowSize = 5;
+  if (totalPages <= windowSize) {
+    return Array.from({ length: totalPages }, (_, index) => index + 1);
+  }
+
+  let start = Math.max(1, currentPage - 2);
+  let end = start + windowSize - 1;
+  if (end > totalPages) {
+    end = totalPages;
+    start = end - windowSize + 1;
+  }
+
+  const result: (number | "ellipsis")[] = [];
+  if (start > 1) {
+    result.push(1);
+    if (start > 2) result.push("ellipsis");
+  }
+  for (let page = start; page <= end; page += 1) {
+    result.push(page);
+  }
+  if (end < totalPages) {
+    if (end < totalPages - 1) result.push("ellipsis");
+    result.push(totalPages);
+  }
+  return result;
 }
 
 function escapeCsv(value: unknown): string {
@@ -134,6 +161,35 @@ function RiskBadge({ risk }: { risk: CustomerInsight["risk_level"] }) {
       <span aria-hidden="true" />
       {riskLabels[risk]}
     </span>
+  );
+}
+
+function SortableHeader({
+  field,
+  label,
+  sortBy,
+  sortOrder,
+  onSort,
+}: {
+  field: SortBy;
+  label: string;
+  sortBy: SortBy;
+  sortOrder: SortOrder;
+  onSort: (field: SortBy) => void;
+}) {
+  const isActive = field === sortBy;
+  return (
+    <button
+      type="button"
+      className={isActive ? "insight-header-sort insight-header-sort--active" : "insight-header-sort"}
+      onClick={() => onSort(field)}
+      aria-label={`${label} 기준 정렬${isActive ? (sortOrder === "desc" ? " (내림차순)" : " (오름차순)") : ""}`}
+    >
+      {label}
+      <span className="insight-header-sort__arrow" aria-hidden="true">
+        {isActive ? (sortOrder === "desc" ? "▼" : "▲") : "⇅"}
+      </span>
+    </button>
   );
 }
 
@@ -218,13 +274,29 @@ function InsightRow({
         <strong>{formatPercent(insight.churn_probability)}</strong>
         <small>이탈 확률</small>
       </span>
-      <span className={`insight-row__gap ${insight.activity_gap < 0 ? "insight-row__gap--negative" : ""}`}>
-        {formatSignedDecimal(insight.activity_gap)}
-        <small>활동성 갭</small>
+      <span className="insight-row__actual">
+        {formatDecimal(insight.expected_transaction_count + insight.activity_gap)}건
+        <small>실제 거래</small>
       </span>
       <span className="insight-row__expected">
         {formatDecimal(insight.expected_transaction_count)}건
         <small>예상 거래</small>
+      </span>
+      <span className={`insight-row__gap ${insight.activity_gap < 0 ? "insight-row__gap--negative" : ""}`}>
+        {formatSignedDecimal(insight.activity_gap)}
+        <small>거래 차이</small>
+      </span>
+      <span className="insight-row__amount">
+        {formatWon(insight.total_trans_amt)}
+        <small>총 거래금액</small>
+      </span>
+      <span className="insight-row__card">
+        {insight.card_category}
+        <small>카드분류</small>
+      </span>
+      <span className="insight-row__contacts">
+        {formatNumber(insight.contacts_count_12_mon)}회
+        <small>문의횟수</small>
       </span>
       <span className="insight-row__cluster">
         {insight.cluster_name}
@@ -631,7 +703,7 @@ function CustomerDetailPanel({
             <div><dt>카드 등급</dt><dd>{detail.customer.card_category}</dd></div>
             <div><dt>소득 구간</dt><dd>{detail.customer.income_category}</dd></div>
             <div><dt>최근 거래 건수</dt><dd>{formatNumber(detail.customer.total_trans_ct)}건</dd></div>
-            <div><dt>거래 금액</dt><dd>{formatNumber(detail.customer.total_trans_amt)}</dd></div>
+            <div><dt>거래 금액</dt><dd>{formatWon(detail.customer.total_trans_amt)}</dd></div>
             <div><dt>비활성 개월</dt><dd>{detail.customer.months_inactive_12_mon}개월</dd></div>
             <div><dt>예상 거래 건수</dt><dd>{formatDecimal(detail.expected_transaction_count)}건</dd></div>
             <div><dt>활동성 갭</dt><dd>{formatDecimal(detail.activity_gap)}</dd></div>
@@ -710,7 +782,7 @@ function CustomerDetailPanel({
   );
 }
 
-export function DashboardPage({ user, onLoggedOut, onOpenCampaigns, onOpenAdminConsole, showCampaignFeedback = false }: DashboardPageProps) {
+export function DashboardPage({ user, showCampaignFeedback = false }: DashboardPageProps) {
   const [data, setData] = useState<CustomerInsightList | null>(null);
   const [error, setError] = useState("");
   const [riskFilter, setRiskFilter] = useState<RiskFilter>("");
@@ -737,8 +809,8 @@ export function DashboardPage({ user, onLoggedOut, onOpenCampaigns, onOpenAdminC
   const [campaignName, setCampaignName] = useState("이탈 위험 리텐션");
   const [campaignSubmitting, setCampaignSubmitting] = useState(false);
   const [campaignMessage, setCampaignMessage] = useState("");
-  const [isLoggingOut, setIsLoggingOut] = useState(false);
-  const [logoutError, setLogoutError] = useState("");
+  // 로그아웃 상태는 AppShell이 소유합니다(헤더가 그쪽으로 옮겨졌기 때문).
+  const [activeTab, setActiveTab] = useState<DashboardTab>("insights");
 
   const canCreateCampaignTargets = user.role === "admin" || user.role === "marketing";
   const canProcessCampaignTargets = user.role === "admin" || user.role === "operations";
@@ -986,20 +1058,16 @@ export function DashboardPage({ user, onLoggedOut, onOpenCampaigns, onOpenAdminC
     setPage(1);
   };
 
-  const handleLogout = async () => {
-    setIsLoggingOut(true);
-    setLogoutError("");
-    try {
-      await logout();
-      onLoggedOut();
-    } catch (requestError) {
-      setLogoutError(
-        requestError instanceof Error ? requestError.message : "로그아웃하지 못했습니다.",
-      );
-    } finally {
-      setIsLoggingOut(false);
+  const handleHeaderSort = (field: SortBy) => {
+    if (field === sortBy) {
+      setSortOrder((current) => (current === "desc" ? "asc" : "desc"));
+    } else {
+      setSortBy(field);
+      setSortOrder("desc");
     }
+    setPage(1);
   };
+
 
   const isInitialLoading = data === null && error === "";
   const dominantCluster = data === null ? null : getDominantCluster(data.stats.cluster_counts);
@@ -1007,37 +1075,24 @@ export function DashboardPage({ user, onLoggedOut, onOpenCampaigns, onOpenAdminC
   const highRiskCount = data?.stats.risk_counts.high ?? 0;
 
   return (
-    <main className="dashboard-layout">
-      <header className="dashboard-header">
-        <div className="dashboard-brand-block">
-          <p className="dashboard-eyebrow">CARDOPS CONSOLE / INSIGHTS</p>
-          <h1>고객 분석 대시보드</h1>
-          <p className="dashboard-subtitle">고객 행동 데이터를 기반으로 이탈 위험과 실행 우선순위를 확인합니다.</p>
-        </div>
-        <div className="dashboard-account">
-          <div>
-            <strong>{user.display_name}</strong>
-            <span>{roleLabels[user.role]}</span>
-          </div>
-          {onOpenAdminConsole ? (
-            <button className="dashboard-nav-button" type="button" onClick={onOpenAdminConsole}>
-              관리자 콘솔
-            </button>
-          ) : onOpenCampaigns && (
-            <button className="dashboard-nav-button" type="button" onClick={onOpenCampaigns}>
-              캠페인 조회
-            </button>
-          )}
-          <button
-            className="dashboard-logout"
-            type="button"
-            onClick={() => void handleLogout()}
-            disabled={isLoggingOut}
-          >
-            {isLoggingOut ? "처리 중..." : "로그아웃"}
-          </button>
-        </div>
-      </header>
+    <>
+      {/* 헤더·로그아웃·워크스페이스 전환은 AppShell이 담당합니다. */}
+      <nav className="dashboard-tabs" aria-label="대시보드 탭">
+        <button
+          type="button"
+          className={`dashboard-tab${activeTab === "insights" ? " dashboard-tab--active" : ""}`}
+          onClick={() => setActiveTab("insights")}
+        >
+          고객 인사이트
+        </button>
+        <button
+          type="button"
+          className={`dashboard-tab${activeTab === "eda" ? " dashboard-tab--active" : ""}`}
+          onClick={() => setActiveTab("eda")}
+        >
+          EDA 차트
+        </button>
+      </nav>
 
       {isInitialLoading && <DashboardSkeleton />}
 
@@ -1049,7 +1104,13 @@ export function DashboardPage({ user, onLoggedOut, onOpenCampaigns, onOpenAdminC
         </section>
       )}
 
-      {data !== null && error === "" && (
+      {data !== null && error === "" && activeTab === "eda" && (
+        <section className="bento-grid" aria-label="EDA 차트">
+          <EdaChartsSection stats={data.stats} />
+        </section>
+      )}
+
+      {data !== null && error === "" && activeTab === "insights" && (
         <section className="bento-grid" aria-label="고객 분석 대시보드">
           <article className="bento-card bento-card--hero">
             <div className="bento-card__heading">
@@ -1170,29 +1231,6 @@ export function DashboardPage({ user, onLoggedOut, onOpenCampaigns, onOpenAdminC
                   ))}
                 </select>
               </label>
-              <label className="filter-field">
-                <span>정렬</span>
-                <select
-                  value={sortBy}
-                  onChange={(event) => {
-                    setSortBy(event.target.value as SortBy);
-                    setPage(1);
-                  }}
-                >
-                  <option value="churn_probability">이탈 확률</option>
-                  <option value="activity_gap">활동성 갭</option>
-                  <option value="expected_transaction_count">예상 거래 건수</option>
-                  <option value="scored_at">분석 시각</option>
-                </select>
-              </label>
-              <button
-                className="sort-order-button"
-                type="button"
-                aria-label={sortOrder === "desc" ? "내림차순 정렬" : "오름차순 정렬"}
-                onClick={() => setSortOrder((current) => current === "desc" ? "asc" : "desc")}
-              >
-                {sortOrder === "desc" ? "↓" : "↑"}
-              </button>
               <button className="reset-filter-button" type="button" onClick={resetFilters}>초기화</button>
             </div>
 
@@ -1204,8 +1242,16 @@ export function DashboardPage({ user, onLoggedOut, onOpenCampaigns, onOpenAdminC
               </div>
             ) : (
               <div className="insight-list" role="list" aria-label="고객 분석 결과 목록">
-                <div className="insight-list__header" aria-hidden="true">
-                  <span>고객</span><span>위험도</span><span>이탈 확률</span><span>활동성 갭</span><span>예상 거래</span><span>군집</span><span>추천 액션</span><span />
+                <div className="insight-list__header">
+                  <span>고객</span><span>위험도</span>
+                  <SortableHeader field="churn_probability" label="이탈 확률" sortBy={sortBy} sortOrder={sortOrder} onSort={handleHeaderSort} />
+                  <SortableHeader field="actual_transaction_count" label="실제 거래" sortBy={sortBy} sortOrder={sortOrder} onSort={handleHeaderSort} />
+                  <SortableHeader field="expected_transaction_count" label="예상 거래" sortBy={sortBy} sortOrder={sortOrder} onSort={handleHeaderSort} />
+                  <SortableHeader field="activity_gap" label="거래 차이" sortBy={sortBy} sortOrder={sortOrder} onSort={handleHeaderSort} />
+                  <SortableHeader field="total_trans_amt" label="총 거래금액" sortBy={sortBy} sortOrder={sortOrder} onSort={handleHeaderSort} />
+                  <SortableHeader field="card_category" label="카드분류" sortBy={sortBy} sortOrder={sortOrder} onSort={handleHeaderSort} />
+                  <SortableHeader field="contacts_count_12_mon" label="문의횟수" sortBy={sortBy} sortOrder={sortOrder} onSort={handleHeaderSort} />
+                  <span>군집</span><span>추천 액션</span><span />
                 </div>
                 {data.items.map((insight) => (
                   <InsightRow key={insight.id} insight={insight} onSelect={(id) => void handleSelectCustomer(id)} />
@@ -1214,12 +1260,44 @@ export function DashboardPage({ user, onLoggedOut, onOpenCampaigns, onOpenAdminC
             )}
 
             <div className="pagination">
-              <span>{data.total === 0 ? "0" : `${(data.page - 1) * data.page_size + 1}–${Math.min(data.page * data.page_size, data.total)}`} / {formatNumber(data.total)}명</span>
-              <div>
-                <button type="button" disabled={data.page <= 1} onClick={() => setPage((current) => current - 1)} aria-label="이전 페이지">←</button>
-                <strong>{data.page}</strong>
-                <button type="button" disabled={data.page >= data.total_pages} onClick={() => setPage((current) => current + 1)} aria-label="다음 페이지">→</button>
+              <span className="pagination__summary">{data.total === 0 ? "0" : `${(data.page - 1) * data.page_size + 1}–${Math.min(data.page * data.page_size, data.total)}`} / {formatNumber(data.total)}명</span>
+              <div className="pagination__pages">
+                <button
+                  type="button"
+                  className="pagination__arrow"
+                  disabled={data.page <= 1}
+                  onClick={() => setPage((current) => current - 1)}
+                  aria-label="이전 페이지"
+                >
+                  ←
+                </button>
+                {getPageNumbers(data.page, data.total_pages).map((pageNumber, index) =>
+                  pageNumber === "ellipsis" ? (
+                    <span key={`ellipsis-${index}`} className="pagination__ellipsis">…</span>
+                  ) : (
+                    <button
+                      key={pageNumber}
+                      type="button"
+                      className={pageNumber === data.page ? "pagination__page pagination__page--active" : "pagination__page"}
+                      aria-current={pageNumber === data.page ? "page" : undefined}
+                      aria-label={`${pageNumber} 페이지`}
+                      onClick={() => setPage(pageNumber)}
+                    >
+                      {pageNumber}
+                    </button>
+                  ),
+                )}
+                <button
+                  type="button"
+                  className="pagination__arrow"
+                  disabled={data.page >= data.total_pages}
+                  onClick={() => setPage((current) => current + 1)}
+                  aria-label="다음 페이지"
+                >
+                  →
+                </button>
               </div>
+              <span className="pagination__spacer" aria-hidden="true" />
             </div>
           </article>
 
@@ -1244,7 +1322,6 @@ export function DashboardPage({ user, onLoggedOut, onOpenCampaigns, onOpenAdminC
         </section>
       )}
 
-      {logoutError !== "" && <p className="dashboard-notice" role="alert">{logoutError}</p>}
       {selectedCustomerId !== null && (
         <>
           <button className="drawer-backdrop" type="button" aria-label="상세 패널 닫기" onClick={() => setSelectedCustomerId(null)} />
@@ -1265,6 +1342,6 @@ export function DashboardPage({ user, onLoggedOut, onOpenCampaigns, onOpenAdminC
           />
         </>
       )}
-    </main>
+    </>
   );
 }

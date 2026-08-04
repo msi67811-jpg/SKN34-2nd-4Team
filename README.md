@@ -179,22 +179,11 @@ openssl rand -hex 32
 생성된 값을 `.env`의 `JWT_SECRET`에 입력합니다. 기존 Mac MySQL과의 포트
 충돌을 피하려면 `MYSQL_PORT=3307`을 유지합니다.
 
-3. 모델을 생성할 Python 환경을 준비하고 세 모델을 실행합니다.
+`.env.example`에는 `ALLOW_TEST_USER_SEEDING=false`가 들어 있습니다. 로컬에서
+테스트 계정으로 로그인하려면 **`true`로 바꿔야 합니다.** 
 
-```bash
-python3 -m venv project_venv
-source project_venv/bin/activate
-python -m pip install -r requirements.txt
-
-python src/classification.py
-python src/regression.py
-python src/clustering.py
-```
-
-모델 산출물은 `outputs/models/`에 생성되며, Docker Backend가 이를 읽기 전용으로
-사용합니다.
-
-4. Frontend·Backend·MySQL을 시작합니다.
+3. Frontend·Backend·MySQL을 시작합니다. 모델은 `model-builder` 컨테이너가
+   자동으로 학습합니다
 
 ```bash
 docker compose up -d --build
@@ -202,24 +191,42 @@ docker compose ps
 ```
 
 `mysql`은 `healthy`, `backend`와 `frontend`는 `Up` 상태여야 합니다.
-Backend는 시작 시 Alembic migration을 자동 적용합니다.
+`model-builder`는 모델 생성을 마치면 `Exited (0)`이 되는 일회성 서비스이며,
+산출물이 이미 있으면 학습을 건너뜁니다. Backend는 시작 시 Alembic migration을
+자동 적용하고, `ALLOW_TEST_USER_SEEDING=true`이면 테스트 계정도 함께 만듭니다.
 
-5. 고객 원본과 최신 분석 결과를 적재합니다.
+4. 고객 데이터를 적재합니다. (합성 목데이터)
+
+<!-- ```bash
+docker compose exec backend python -m backend.scripts.import_customers
+``` -->
+
+위험도 구간이 고르게 분포한 합성 고객 2,000명
 
 ```bash
-docker compose exec backend python -m backend.scripts.import_customers
-docker compose exec backend python -m backend.scripts.run_analysis_batch
+docker compose exec backend python -m backend.scripts.generate_synthetic_customers
+docker compose exec backend python -m backend.scripts.import_customers \
+  --data-path /app/data/synthetic/synthetic_customers.csv --replace
 ```
 
 `import_customers`는 `CLIENTNUM` 기준 upsert 방식이므로 다시 실행해도 고객이
-중복되지 않습니다. 분석 배치는 `customers`를 읽어 `customer_feature_snapshots`,
+중복되지 않습니다. `--replace`는 기존 고객과 연관 데이터를 모두 지우고
+교체하므로 로컬 DB에서만 사용합니다.
+
+5. 분석 배치를 실행합니다.
+
+```bash
+docker compose exec backend python -m backend.scripts.run_analysis_batch
+```
+
+분석 배치는 `customers`를 읽어 `customer_feature_snapshots`,
 `scoring_batches`, `model_runs`, `customer_insights`에 결과를 저장합니다.
 
-6. 역할별 화면을 확인하려면 로컬 테스트 계정을 생성합니다. 먼저 `.env`에
-다음 값을 입력한 뒤 Backend를 재생성합니다.
+6. 테스트 계정 비밀번호를 직접 정하고 싶을 때만 `.env`에 다음을 추가하고
+Backend를 재생성합니다. 값을 비워두면 `compose.yaml`의 기본값이 사용됩니다.
+컨테이너는 **생성 시점**의 환경변수를 쓰므로 반드시 재생성해야 반영됩니다.
 
 ```env
-ALLOW_TEST_USER_SEEDING=true
 TEST_ADMIN_PASSWORD=<12자 이상의 로컬 전용 비밀번호>
 TEST_ANALYST_PASSWORD=<12자 이상의 로컬 전용 비밀번호>
 TEST_OPERATIONS_PASSWORD=<12자 이상의 로컬 전용 비밀번호>
@@ -228,22 +235,28 @@ TEST_MARKETING_PASSWORD=<12자 이상의 로컬 전용 비밀번호>
 
 ```bash
 docker compose up -d --force-recreate backend
-docker compose exec backend python -m backend.scripts.seed_test_users
 ```
 
-시드가 끝나면 `.env`의 `ALLOW_TEST_USER_SEEDING=false`로 되돌리고 Backend를
-다시 생성합니다. 테스트 계정 비밀번호는 저장소에 포함하지 않습니다.
+테스트 계정 비밀번호는 저장소에 포함하지 않습니다.
 
 7. 대상군·대조군 성과를 시연하려면 선택적으로 합성 Demo 데이터를 생성합니다.
+   **4번에서 고객을 교체했다면 이 단계를 다시 실행해야** 캠페인이 새 고객에
+   연결됩니다. 두 스크립트 모두 자기가 만든 캠페인을 지우고 새로 만듭니다.
 
 ```bash
 docker compose exec backend python -m backend.scripts.seed_demo_campaign \
   --limit-per-campaign 60
+docker compose exec backend python -m backend.scripts.seed_segment_scenarios
 ```
 
-`[DEMO]` 캠페인 3개와 대상군·대조군, 전환·유지·매출 결과가 생성됩니다.
+`[DEMO]` 캠페인 3개와 대상군·대조군, 전환·유지·매출 결과가 생성되고,
+`[시나리오]` 캠페인 4개로 초안·처리중·관측대기·측정완료 업무 흐름이 재현됩니다.
 시연 데이터는 로컬 개발 DB에서만 사용하며, 실제 비즈니스 성과 판단에 사용하지
-않습니다. 자세한 내용은 [`docs/demo_data.md`](docs/demo_data.md)를 확인합니다.
+않습니다. 자세한 내용은 [`docs/demo_data.md`](docs/demo_data.md)와
+[`docs/campaign_workflow.md`](docs/campaign_workflow.md)를 확인합니다.
+
+명령을 그대로 따라 검증한 실행 기록과 실측 수치는
+[`docs/verified_setup_windows.md`](docs/verified_setup_windows.md)에 있습니다.
 
 ### 접속 주소
 

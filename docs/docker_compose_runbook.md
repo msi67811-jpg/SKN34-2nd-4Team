@@ -147,6 +147,24 @@ docker compose exec backend python -m backend.scripts.run_analysis_batch
 docker compose exec backend python -m backend.scripts.run_analysis_batch --force
 ```
 
+## 위험도 분포를 조정한 합성 고객 데이터
+
+실제 데이터는 위험도가 낮음/주의에 치우쳐 있습니다. 위험도 비율을 원하는 대로
+맞춘 합성 데이터셋을 만들어 로컬 DB의 `customers`를 통째로 교체하려면
+다음을 실행합니다.
+
+```powershell
+docker compose exec backend python -m backend.scripts.generate_synthetic_customers
+docker compose exec backend python -m backend.scripts.import_customers --data-path backend/data/synthetic/synthetic_customers.csv --replace
+docker compose exec backend python -m backend.scripts.run_analysis_batch
+```
+
+`generate_synthetic_customers`는 DB를 건드리지 않고 CSV만 만듭니다(기본값:
+2,000명, 낮음/주의/높음 20/60/20 — `--count`, `--low-share`, `--high-share`로
+조정). `import_customers --replace`가 실제로 `customers`와 연관 데이터
+(`customer_insights`, `campaign_targets` 등)를 모두 삭제하고 교체하므로,
+로컬 개발 DB에서만 사용합니다.
+
 ## 테스트 계정
 
 로컬 개발 Compose에서는 테스트 계정이 Backend 시작 시 migration 후 자동으로 upsert됩니다.

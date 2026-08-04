@@ -235,3 +235,69 @@ def test_bulk_targeting_preview_execute_cancel_and_rerun(tmp_path: Path) -> None
             assert rerun_target.experiment_group == target.experiment_group
     finally:
         engine.dispose()
+
+
+def test_every_segment_is_fully_configured() -> None:
+    """세그먼트를 추가할 때 설정 dict를 빠뜨리면 런타임에 KeyError가 납니다.
+
+    이름·설명·우선순위는 서로 다른 dict 3개에 흩어져 있고, 우선순위는 일괄
+    타기팅과 개별 등록 서비스에 각각 존재합니다. 하나라도 누락되면 미리보기나
+    중복 접촉 방지가 조용히 어긋나므로 여기서 한 번에 고정합니다.
+    """
+    from backend.app.services.bulk_targeting_service import (
+        DEFAULT_CAMPAIGN_DESCRIPTIONS,
+        DEFAULT_CAMPAIGN_NAMES,
+        SEGMENT_TARGETING_PRIORITIES,
+    )
+    from backend.app.services.campaign_service import SEGMENT_PRIORITIES
+
+    segments = {segment.value for segment in BulkTargetingSegment}
+
+    assert segments <= set(DEFAULT_CAMPAIGN_NAMES)
+    assert segments <= set(DEFAULT_CAMPAIGN_DESCRIPTIONS)
+    assert segments <= set(SEGMENT_TARGETING_PRIORITIES)
+    assert segments <= set(SEGMENT_PRIORITIES)
+
+    # 두 우선순위 맵이 어긋나면 "일괄 타기팅은 제외했는데 개별 등록은 허용"
+    # 같은 모순이 생깁니다.
+    for segment in segments:
+        assert SEGMENT_TARGETING_PRIORITIES[segment] == SEGMENT_PRIORITIES[segment], (
+            f"{segment}의 우선순위가 일괄 타기팅과 개별 등록에서 다릅니다."
+        )
+
+
+def test_segment_check_constraint_allows_every_enum_value(tmp_path: Path) -> None:
+    """DB의 CHECK 제약이 enum과 어긋나면 미리보기 저장이 실패합니다.
+
+    세그먼트를 코드에만 추가하고 마이그레이션을 빠뜨리면 화면에서는 선택되는데
+    저장 시점에 500이 납니다(실제로 발생했던 문제). 모든 enum 값이 DB에
+    들어갈 수 있는지 직접 확인합니다.
+    """
+    from backend.app.models import BulkTargetingRun
+
+    database_url = f"sqlite:///{tmp_path / 'segments.sqlite3'}"
+    upgrade_database(database_url)
+    engine = create_engine(database_url)
+    try:
+        with Session(engine) as session:
+            for segment in BulkTargetingSegment:
+                session.add(
+                    BulkTargetingRun(
+                        segment_code=segment.value,
+                        status="previewed",
+                        rules_json={"segment": segment.value},
+                        preview_count=0,
+                        eligible_count=0,
+                        created_count=0,
+                        skipped_active_campaign_count=0,
+                        skipped_recent_contact_count=0,
+                        skipped_opt_out_count=0,
+                        cancelled_target_count=0,
+                    )
+                )
+            session.commit()
+
+            stored = set(session.scalars(select(BulkTargetingRun.segment_code)).all())
+            assert stored == {segment.value for segment in BulkTargetingSegment}
+    finally:
+        engine.dispose()

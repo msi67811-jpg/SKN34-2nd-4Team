@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { listTeamMembers, updateTeamMember, type TeamMember } from "../../api/team";
 import type { ApiError } from "../../api/client";
-import { logout, type AuthUser } from "../../api/auth";
+import type { AuthUser } from "../../api/auth";
 import {
   createCampaignTarget,
   listCampaignTargets,
@@ -82,9 +82,6 @@ const PAGE_GROUP_SIZE = 10;
 
 type DepartmentDashboardPageProps = {
   user: AuthUser;
-  onLoggedOut: () => void;
-  onOpenCampaigns?: () => void;
-  onOpenDashboard?: () => void;
 };
 
 type CampaignDraft = {
@@ -146,68 +143,6 @@ function DepartmentRiskBadge({ risk }: { risk: CustomerInsight["risk_level"] }) 
       <span aria-hidden="true" />
       {riskLabels[risk]}
     </span>
-  );
-}
-
-function WorkspaceShell({
-  user,
-  section,
-  title,
-  subtitle,
-  onLogout,
-  isLoggingOut,
-  logoutError,
-  onOpenCampaigns,
-  onOpenDashboard,
-  children,
-}: {
-  user: AuthUser;
-  section: string;
-  title: string;
-  subtitle: string;
-  onLogout: () => void;
-  isLoggingOut: boolean;
-  logoutError: string;
-  onOpenCampaigns?: () => void;
-  onOpenDashboard?: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <main className={`department-layout department-layout--${user.role}`}>
-      <header className="department-header">
-        <div>
-          <p className="dashboard-eyebrow">CARDOPS CONSOLE / {section}</p>
-          <h1>{title}</h1>
-          <p className="dashboard-subtitle">{subtitle}</p>
-        </div>
-        <div className="department-account">
-          <div>
-            <strong>{user.display_name}</strong>
-            <span>{roleLabels[user.role]}</span>
-          </div>
-          {onOpenCampaigns && (
-            <button className="dashboard-nav-button" type="button" onClick={onOpenCampaigns}>
-              캠페인 관리
-            </button>
-          )}
-          {onOpenDashboard && (
-            <button className="dashboard-nav-button" type="button" onClick={onOpenDashboard}>
-              고객 분석 대시보드
-            </button>
-          )}
-          <button
-            className="dashboard-logout"
-            type="button"
-            onClick={onLogout}
-            disabled={isLoggingOut}
-          >
-            {isLoggingOut ? "처리 중..." : "로그아웃"}
-          </button>
-        </div>
-      </header>
-      {logoutError !== "" && <p className="dashboard-notice" role="alert">{logoutError}</p>}
-      {children}
-    </main>
   );
 }
 
@@ -985,7 +920,7 @@ function TeamRoster({
   );
 }
 
-export function DepartmentDashboardPage({ user, onLoggedOut, onOpenCampaigns, onOpenDashboard }: DepartmentDashboardPageProps) {
+export function DepartmentDashboardPage({ user }: DepartmentDashboardPageProps) {
   const [insights, setInsights] = useState<CustomerInsightList | null>(null);
   const [targets, setTargets] = useState<CampaignTarget[]>([]);
   const [campaignTargetTotal, setCampaignTargetTotal] = useState(0);
@@ -1006,8 +941,6 @@ export function DepartmentDashboardPage({ user, onLoggedOut, onOpenCampaigns, on
   const [createMessage, setCreateMessage] = useState("");
   const [campaignConflictMessage, setCampaignConflictMessage] = useState("");
   const [insightRefreshKey, setInsightRefreshKey] = useState(0);
-  const [isLoggingOut, setIsLoggingOut] = useState(false);
-  const [logoutError, setLogoutError] = useState("");
 
   const canProcessTargets = user.role === "admin" || user.role === "operations";
   const canCreateCampaignTargets = user.role === "admin" || user.role === "marketing";
@@ -1043,11 +976,15 @@ export function DepartmentDashboardPage({ user, onLoggedOut, onOpenCampaigns, on
   useEffect(() => {
     let isActive = true;
     const load = async () => {
-      const [insightResult, campaignResult, batchResult] = await Promise.allSettled([
+    const [insightResult, campaignResult, batchResult] = await Promise.allSettled([
         listCustomerInsights(insightQuery),
-        listCampaignTargets({ page: campaignQueuePage, page_size: CAMPAIGN_QUEUE_PAGE_SIZE }),
-        getLatestBatch(),
-      ]);
+        listCampaignTargets({
+    page: campaignQueuePage,
+    page_size: CAMPAIGN_QUEUE_PAGE_SIZE,
+    ...(user.role === "operations" ? { sort_by_priority: true } : {}),
+  }),
+  getLatestBatch(),
+]);
       if (!isActive) {
         return;
       }
@@ -1099,19 +1036,6 @@ export function DepartmentDashboardPage({ user, onLoggedOut, onOpenCampaigns, on
       isActive = false;
     };
   }, [user.id, user.role]);
-
-  const handleLogout = async () => {
-    setIsLoggingOut(true);
-    setLogoutError("");
-    try {
-      await logout();
-      onLoggedOut();
-    } catch (requestError) {
-      setLogoutError(requestError instanceof Error ? requestError.message : "로그아웃하지 못했습니다.");
-    } finally {
-      setIsLoggingOut(false);
-    }
-  };
 
   const createCampaign = async (insight: CustomerInsight) => {
     if (!canCreateCampaignTargets) {
@@ -1320,17 +1244,7 @@ export function DepartmentDashboardPage({ user, onLoggedOut, onOpenCampaigns, on
   );
 
   return (
-    <WorkspaceShell
-      user={user}
-      section={roleLabels[user.role].toUpperCase()}
-      title={user.role === "operations" ? "운영 업무 센터" : user.role === "marketing" ? "마케팅 캠페인 센터" : "관리자 콘솔"}
-      subtitle={roleDescriptions[user.role]}
-      onLogout={() => void handleLogout()}
-      isLoggingOut={isLoggingOut}
-      logoutError={logoutError}
-      onOpenCampaigns={user.role === "marketing" ? undefined : onOpenCampaigns}
-      onOpenDashboard={user.role === "admin" ? onOpenDashboard : undefined}
-    >
+    <div className={`department-layout--${user.role}`}>
       {isLoading && <section className="department-loading">부서별 업무 데이터를 불러오는 중입니다.</section>}
       {!isLoading && error !== "" && <section className="department-error" role="alert">{error}</section>}
       {!isLoading && error === "" && (
@@ -1346,6 +1260,6 @@ export function DepartmentDashboardPage({ user, onLoggedOut, onOpenCampaigns, on
           onClose={() => setCampaignConflictMessage("")}
         />
       )}
-    </WorkspaceShell>
+    </div>
   );
 }

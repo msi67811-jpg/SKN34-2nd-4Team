@@ -22,6 +22,9 @@ const insight = {
   risk_level: "high",
   expected_transaction_count: 12.5,
   activity_gap: 0.4,
+  total_trans_amt: 5000,
+  card_category: "Blue",
+  contacts_count_12_mon: 1,
   cluster_name: "활성 저하군",
   cluster_confidence: 0.91,
   recommended_action: "개인화 혜택을 제안하세요.",
@@ -145,9 +148,41 @@ const campaignPerformance = {
   generated_at: "2026-08-01T00:05:00Z",
 };
 
+const categoricalChurnRate = {
+  field: "Gender",
+  items: [
+    { group: "F", churn_rate: 0.175, count: 5358 },
+    { group: "M", churn_rate: 0.146, count: 4769 },
+  ],
+};
+
+const numericDistribution = {
+  field: "Total_Trans_Ct",
+  by_target: {
+    "0": { min: 10, q1: 45, median: 71, q3: 81, max: 139, count: 8500 },
+    "1": { min: 10, q1: 32, median: 43, q3: 56, max: 111, count: 1627 },
+  },
+};
+
+const featureCorrelation = {
+  items: [
+    { feature: "Total_Trans_Ct", correlation: -0.371 },
+    { feature: "Contacts_Count_12_mon", correlation: 0.204 },
+  ],
+};
+
 function dashboardFetchMock() {
   return vi.fn().mockImplementation((input: RequestInfo | URL) => {
     const path = String(input);
+    if (path.includes("/analytics/categorical-churn-rate")) {
+      return Promise.resolve(successResponse(categoricalChurnRate));
+    }
+    if (path.includes("/analytics/numeric-distribution")) {
+      return Promise.resolve(successResponse(numericDistribution));
+    }
+    if (path.includes("/analytics/feature-correlation")) {
+      return Promise.resolve(successResponse(featureCorrelation));
+    }
     if (path.includes("/history/")) {
       return Promise.resolve(successResponse(insightHistory));
     }
@@ -176,7 +211,7 @@ describe("고객 분석 대시보드", () => {
     const fetchMock = dashboardFetchMock();
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<DashboardPage user={authUser} onLoggedOut={vi.fn()} />);
+    render(<DashboardPage user={authUser} />);
 
     expect(await screen.findByText("분석 대상 고객")).toBeInTheDocument();
     expect(screen.getByText("고객별 분석 결과")).toBeInTheDocument();
@@ -207,7 +242,7 @@ describe("고객 분석 대시보드", () => {
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
 
-    render(<DashboardPage user={authUser} onLoggedOut={vi.fn()} />);
+    render(<DashboardPage user={authUser} />);
 
     const clusterFilter = await screen.findByRole("combobox", { name: "군집" });
     await user.selectOptions(clusterFilter, "활성 저하군");
@@ -216,12 +251,33 @@ describe("고객 분석 대시보드", () => {
     expect(clusterFilter).toHaveValue("활성 저하군");
   });
 
+  it("EDA 차트 탭으로 전환하면 고객 인사이트 대신 EDA 차트를 표시합니다", async () => {
+    const fetchMock = dashboardFetchMock();
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    render(<DashboardPage user={authUser} />);
+
+    expect(await screen.findByText("고객별 분석 결과")).toBeInTheDocument();
+    expect(screen.queryByText("탐색적 데이터 분석 차트")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "EDA 차트" }));
+
+    expect(await screen.findByText("탐색적 데이터 분석 차트")).toBeInTheDocument();
+    expect(screen.queryByText("고객별 분석 결과")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "고객 인사이트" }));
+
+    expect(await screen.findByText("고객별 분석 결과")).toBeInTheDocument();
+    expect(screen.queryByText("탐색적 데이터 분석 차트")).not.toBeInTheDocument();
+  });
+
   it("고객을 선택하면 상세 패널을 표시합니다", async () => {
     const fetchMock = dashboardFetchMock();
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
 
-    render(<DashboardPage user={authUser} onLoggedOut={vi.fn()} />);
+    render(<DashboardPage user={authUser} />);
 
     await user.click(await screen.findByRole("button", { name: /1001/ }));
 

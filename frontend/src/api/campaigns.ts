@@ -73,6 +73,7 @@ export function listCampaignTargetsByCampaign(
     assigned_to_user_id?: number;
     customer_id?: number;
     converted?: boolean;
+    sort_by_priority?: boolean;
     page?: number;
     page_size?: number;
   } = {},

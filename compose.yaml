@@ -75,6 +75,8 @@ services:
     volumes:
       - ./outputs/models:/app/outputs/models:ro
       - ./data:/app/data:ro
+      # 원본(data/raw)은 읽기 전용으로 두고, 합성 데이터셋 사용하게 변경
+      - ./data/synthetic:/app/data/synthetic
     depends_on:
       mysql:
         condition: service_healthy

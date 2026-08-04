@@ -84,6 +84,13 @@ class BulkTargetingSegment(str, Enum):
     HIGH_RISK_RETENTION = "high_risk_retention"
     MEDIUM_REACTIVATION = "medium_reactivation"
     LOW_RISK_UPSELL = "low_risk_upsell"
+    # 아래 4종은 예측 위험도가 아니라 고객 원본 지표(리볼빙 잔액·거래건수)로
+    # 정의합니다. 원본 데이터 10,127명에 대해 train/test 분할 양쪽에서 실제
+    # 이탈률 차이가 재현되는 것을 확인한 조건만 채택했습니다.
+    SMALL_BALANCE_DECLINE = "small_balance_decline"
+    DORMANT_FULL_PAYER = "dormant_full_payer"
+    ACTIVE_FULL_PAYER = "active_full_payer"
+    STABLE_PRIME = "stable_prime"
 
 
 class BulkTargetingRunStatus(str, Enum):

@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
-from typing import Any, Literal
+from datetime import date, datetime, timezone
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 from .enums import (
     CampaignLifecycleStatus,
@@ -18,6 +25,22 @@ from .enums import (
     RiskLevel,
     UserRole,
 )
+
+
+def _ensure_utc(value: datetime) -> datetime:
+    """타임존이 없는 datetime을 UTC로 간주해 offset을 붙입니다.
+
+    MySQL ``DATETIME``에는 타임존이 없어 ORM이 naive datetime을 돌려줍니다.
+    그대로 직렬화하면 ``2026-08-04T02:27:22``처럼 offset 없는 문자열이 되고,
+    브라우저의 ``new Date()``는 offset이 없는 값을 로컬 시간으로 해석하므로
+    UTC로 저장된 시각이 KST로 잘못 표시됩니다. 애플리케이션은 항상 UTC로
+    기록하므로, API 경계에서 UTC임을 명시해 이 혼동을 없앱니다.
+    """
+    return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+
+
+# API가 주고받는 모든 시각은 UTC offset을 포함합니다.
+UtcDatetime = Annotated[datetime, AfterValidator(_ensure_utc)]
 
 
 # 프론트엔드용 snake_case 필드명을 학습 데이터의 원본 컬럼명으로 연결합니다.
@@ -151,9 +174,9 @@ class CustomerProfileResponse(BaseModel):
     total_ct_chng_q4_q1: float
     avg_utilization_ratio: float
     marketing_opt_out: bool = False
-    last_contacted_at: datetime | None = None
-    created_at: datetime
-    updated_at: datetime
+    last_contacted_at: UtcDatetime | None = None
+    created_at: UtcDatetime
+    updated_at: UtcDatetime
 
 
 class CustomerFeatureSnapshotResponse(BaseModel):
@@ -166,7 +189,7 @@ class CustomerFeatureSnapshotResponse(BaseModel):
     feature_sha256: str
     source_dataset_sha256: str | None
     as_of_date: date
-    as_of_at: datetime
+    as_of_at: UtcDatetime
     customer_age: int
     gender: str
     dependent_count: int
@@ -205,11 +228,14 @@ class CustomerInsightResponse(BaseModel):
     risk_level: RiskLevel
     expected_transaction_count: float = Field(ge=0.0)
     activity_gap: float
+    total_trans_amt: int = Field(ge=0)
+    card_category: str
+    contacts_count_12_mon: int = Field(ge=0)
     cluster_name: str
     cluster_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     recommended_action: str
     reason_codes: list[str] | dict[str, Any] | None
-    scored_at: datetime
+    scored_at: UtcDatetime
 
 
 class CustomerInsightStats(BaseModel):
@@ -220,6 +246,52 @@ class CustomerInsightStats(BaseModel):
     risk_counts: dict[str, int]
     cluster_counts: dict[str, int]
     cluster_options: dict[str, int]
+
+
+class CategoricalChurnRateItem(BaseModel):
+    """범주형 변수 한 그룹의 이탈률 요약입니다."""
+
+    group: str
+    churn_rate: float = Field(ge=0.0, le=1.0)
+    count: int
+
+
+class CategoricalChurnRateResponse(BaseModel):
+    """범주형 변수별 이탈률 분포입니다."""
+
+    field: str
+    items: list[CategoricalChurnRateItem]
+
+
+class NumericDistributionBucket(BaseModel):
+    """이탈 여부 한쪽 그룹의 수치형 변수 사분위 요약(박스플롯 입력)입니다."""
+
+    min: float
+    q1: float
+    median: float
+    q3: float
+    max: float
+    count: int
+
+
+class NumericDistributionResponse(BaseModel):
+    """이탈 여부(0/1)별 수치형 변수 분포입니다."""
+
+    field: str
+    by_target: dict[str, NumericDistributionBucket]
+
+
+class FeatureCorrelationItem(BaseModel):
+    """단일 변수와 이탈(Target) 간 상관계수입니다."""
+
+    feature: str
+    correlation: float = Field(ge=-1.0, le=1.0)
+
+
+class FeatureCorrelationResponse(BaseModel):
+    """수치형 변수와 이탈 간 상관계수 목록(절댓값 내림차순)입니다."""
+
+    items: list[FeatureCorrelationItem]
 
 
 class CustomerInsightHistoryResponse(BaseModel):
@@ -247,8 +319,8 @@ class ModelRunResponse(BaseModel):
     activity_gap_quantile: float | None
     status: ModelRunStatus
     processed_rows: int | None
-    started_at: datetime
-    completed_at: datetime | None
+    started_at: UtcDatetime
+    completed_at: UtcDatetime | None
 
 
 class LatestBatchResponse(BaseModel):
@@ -260,8 +332,8 @@ class LatestBatchResponse(BaseModel):
     decision_policy_id: int | None = None
     decision_policy_sha256: str | None = None
     status: ModelRunStatus
-    started_at: datetime
-    completed_at: datetime | None
+    started_at: UtcDatetime
+    completed_at: UtcDatetime | None
     processed_rows: int | None
     dataset_sha256: str | None
     runs: list[ModelRunResponse]
@@ -288,8 +360,8 @@ class CampaignResponse(BaseModel):
     channel: str | None
     segment_code: BulkTargetingSegment | None = None
     status: CampaignLifecycleStatus
-    start_at: datetime | None
-    end_at: datetime | None
+    start_at: UtcDatetime | None
+    end_at: UtcDatetime | None
     experiment_enabled: bool = False
     control_group_ratio: float = Field(ge=0.0, lt=1.0)
     experiment_policy_locked: bool = False
@@ -300,8 +372,8 @@ class CampaignResponse(BaseModel):
     retention_window_days: int = Field(ge=1, le=365)
     created_by_user_id: int | None
     created_by_display_name: str | None = None
-    created_at: datetime
-    updated_at: datetime
+    created_at: UtcDatetime
+    updated_at: UtcDatetime
     stats: CampaignStatsResponse
 
 
@@ -313,8 +385,8 @@ class CampaignCreateRequest(BaseModel):
     channel: str | None = Field(default=None, max_length=30)
     segment_code: BulkTargetingSegment | None = None
     status: CampaignLifecycleStatus = CampaignLifecycleStatus.DRAFT
-    start_at: datetime | None = None
-    end_at: datetime | None = None
+    start_at: UtcDatetime | None = None
+    end_at: UtcDatetime | None = None
     experiment_enabled: bool = False
     control_group_ratio: float = Field(default=0.2, ge=0.0, lt=1.0)
     fixed_cost: float = Field(default=0.0, ge=0.0)
@@ -346,8 +418,8 @@ class CampaignUpdateRequest(BaseModel):
     channel: str | None = Field(default=None, max_length=30)
     segment_code: BulkTargetingSegment | None = None
     status: CampaignLifecycleStatus | None = None
-    start_at: datetime | None = None
-    end_at: datetime | None = None
+    start_at: UtcDatetime | None = None
+    end_at: UtcDatetime | None = None
     experiment_enabled: bool | None = None
     control_group_ratio: float | None = Field(default=None, ge=0.0, lt=1.0)
     fixed_cost: float | None = Field(default=None, ge=0.0)
@@ -387,19 +459,19 @@ class CampaignTargetResponse(BaseModel):
     assigned_to_user_id: int | None
     assigned_to_display_name: str | None = None
     status: CampaignStatus
-    processed_at: datetime | None
-    contacted_at: datetime | None = None
-    completed_at: datetime | None = None
-    converted_at: datetime | None = None
+    processed_at: UtcDatetime | None
+    contacted_at: UtcDatetime | None = None
+    completed_at: UtcDatetime | None = None
+    converted_at: UtcDatetime | None = None
     result: str | None
     result_notes: str | None
     result_code: CampaignResultCode | None = None
     converted: bool = False
     retained: bool | None = None
-    retention_checked_at: datetime | None = None
+    retention_checked_at: UtcDatetime | None = None
     outcome_revenue: float | None = Field(default=None, ge=0.0)
-    created_at: datetime
-    updated_at: datetime
+    created_at: UtcDatetime
+    updated_at: UtcDatetime
 
 
 class CampaignTargetCreateRequest(BaseModel):
@@ -461,7 +533,7 @@ class CampaignEventResponse(BaseModel):
     actor_display_name: str | None = None
     note: str | None
     metadata_json: dict[str, Any] | None
-    created_at: datetime
+    created_at: UtcDatetime
 
 
 class CampaignEventListResponse(BaseModel):
@@ -522,7 +594,7 @@ class CampaignPerformanceResponse(BaseModel):
     by_campaign: list[CampaignPerformanceBreakdown]
     by_segment: list[CampaignPerformanceBreakdown]
     by_assignee: list[CampaignPerformanceBreakdown]
-    generated_at: datetime
+    generated_at: UtcDatetime
 
 
 class BulkTargetingPreviewRequest(BaseModel):
@@ -614,9 +686,9 @@ class BulkTargetingRunResponse(BaseModel):
     skipped_opt_out_count: int
     cancelled_target_count: int
     items: list[BulkTargetingPreviewItem]
-    created_at: datetime
-    executed_at: datetime | None
-    cancelled_at: datetime | None
+    created_at: UtcDatetime
+    executed_at: UtcDatetime | None
+    cancelled_at: UtcDatetime | None
 
 
 class BulkTargetingRunListResponse(BaseModel):
@@ -640,7 +712,7 @@ class CustomerContactPreferenceResponse(BaseModel):
 
     customer_id: int
     marketing_opt_out: bool
-    last_contacted_at: datetime | None
+    last_contacted_at: UtcDatetime | None
 
 
 class CustomerInsightListResponse(BaseModel):
@@ -721,7 +793,7 @@ class UserResponse(BaseModel):
     username: str
     display_name: str
     role: UserRole
-    created_at: datetime
+    created_at: UtcDatetime
 
 
 class TeamMemberResponse(BaseModel):
@@ -734,7 +806,7 @@ class TeamMemberResponse(BaseModel):
     display_name: str
     role: UserRole
     is_active: bool
-    created_at: datetime
+    created_at: UtcDatetime
 
 
 class UserAdminUpdateRequest(BaseModel):

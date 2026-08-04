@@ -11,6 +11,7 @@ import {
   type CustomerInsightList,
   type InsightQuery,
 } from "../../api/insights";
+import { CampaignPagination } from "./CampaignPagination";
 
 const PAGE_SIZE = 8;
 
@@ -115,7 +116,7 @@ export function CampaignCandidatePanel({
   canManage: boolean;
   onRegistered: () => void;
 }) {
-  const [data, setData] = useState<CustomerInsightList | null>(null);
+  const [fetchedData, setFetchedData] = useState<CustomerInsightList | null>(null);
   const [riskFilter, setRiskFilter] = useState<RiskFilter>("");
   const [clusterFilter, setClusterFilter] = useState("");
   const [sortBy, setSortBy] = useState<SortBy>("churn_probability");
@@ -139,34 +140,40 @@ export function CampaignCandidatePanel({
     page_size: PAGE_SIZE,
   }), [clusterFilter, page, riskFilter, selectedCampaign?.id, sortBy, sortOrder]);
 
+  const selectedCampaignId = selectedCampaign?.id ?? null;
+
   useEffect(() => {
-    if (selectedCampaign === null) {
-      setData(null);
+    if (selectedCampaignId === null) {
       return;
     }
     let isActive = true;
-    setIsLoading(true);
-    void listCustomerInsights(query)
-      .then((response) => {
+    const loadCandidates = async () => {
+      setIsLoading(true);
+      try {
+        const response = await listCustomerInsights(query);
         if (isActive) {
-          setData(response);
+          setFetchedData(response);
           setError("");
         }
-      })
-      .catch((requestError) => {
+      } catch (requestError) {
         if (isActive) {
           setError(errorMessage(requestError, "캠페인 후보를 불러오지 못했습니다."));
         }
-      })
-      .finally(() => {
+      } finally {
         if (isActive) {
           setIsLoading(false);
         }
-      });
+      }
+    };
+    void loadCandidates();
     return () => {
       isActive = false;
     };
-  }, [query, refreshKey, selectedCampaign?.id]);
+  }, [query, refreshKey, selectedCampaignId]);
+
+  // 캠페인 선택이 해제되면 직전 캠페인의 후보 목록을 보여주지 않는다
+  // (effect 안에서 setState로 초기화하는 대신 파생값으로 처리).
+  const data = selectedCampaignId === null ? null : fetchedData;
 
   const clusterOptions = Object.entries(data?.stats.cluster_options ?? {}).sort(
     ([firstName, firstCount], [secondName, secondCount]) => secondCount - firstCount
@@ -353,14 +360,15 @@ export function CampaignCandidatePanel({
             </div>
           )}
           {data !== null && data.total > 0 && (
-            <div className="department-insight-pagination campaign-candidate-pagination">
-              <span>{formatNumber((data.page - 1) * data.page_size + 1)}–{formatNumber(Math.min(data.page * data.page_size, data.total))} / {formatNumber(data.total)}명</span>
-              <div>
-                <button type="button" aria-label="이전 캠페인 후보 페이지" disabled={data.page <= 1} onClick={() => changePage(data.page - 1)}>←</button>
-                <strong>{data.page} / {data.total_pages}</strong>
-                <button type="button" aria-label="다음 캠페인 후보 페이지" disabled={data.page >= data.total_pages} onClick={() => changePage(data.page + 1)}>→</button>
-              </div>
-            </div>
+            <CampaignPagination
+              label="캠페인 후보"
+              total={data.total}
+              page={data.page}
+              pageSize={data.page_size}
+              totalPages={Math.max(data.total_pages, 1)}
+              summarySuffix="명"
+              onPageChange={changePage}
+            />
           )}
         </>
       )}

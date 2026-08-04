@@ -116,7 +116,7 @@ def main() -> dict[str, Any]:
     print(board.round(4).to_string(index=False))
 
     final_model = candidates["LightGBM (Tuned)"]  # 노트북 결론: 앙상블보다 단독이 우수
-
+   
     test_row = evaluate_classification(MODEL_NAME, "Test", final_model, Xte, yte)
     print(f"\n[{MODEL_NAME}] Test 최종 평가 (처음이자 마지막):")
     print(pd.DataFrame([test_row]).round(4).to_string(index=False))

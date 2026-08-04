@@ -62,9 +62,16 @@ def test_regression_input_matches_final_feature_contract() -> None:
 
 def test_risk_and_action_policy() -> None:
     """위험도 기준과 활동성 갭 기반 액션 문구가 일관되게 적용되는지 확인합니다."""
-    assert _risk_level(0.9, 0.5, 0.85) == "high"
-    assert _risk_level(0.6, 0.5, 0.85) == "medium"
-    assert _risk_level(0.2, 0.5, 0.85) == "low"
+    # 활동성 갭이 임계값보다 높으면(=급감하지 않았으면) 확률만으로 구간이 정해집니다.
+    healthy_gap = {"activity_gap": 0.0, "activity_gap_priority_threshold": -5.0}
+    assert _risk_level(0.9, 0.5, 0.85, **healthy_gap) == "high"
+    assert _risk_level(0.6, 0.5, 0.85, **healthy_gap) == "medium"
+    assert _risk_level(0.2, 0.5, 0.85, **healthy_gap) == "low"
+    # 확률이 낮아도 활동성 갭이 하위 분위수 이하로 급감하면 medium으로 올립니다
+    # (확률만 쓰면 medium 구간이 거의 비어 재활성화 세그먼트가 작동하지 않던 문제).
+    assert _risk_level(
+        0.2, 0.5, 0.85, activity_gap=-6.0, activity_gap_priority_threshold=-5.0
+    ) == "medium"
     assert _recommended_action("high", -3.0, "우선케어(거래 감소)") == (
         "이탈 위험 우선 상담 및 거래 활성화 혜택"
     )
@@ -90,7 +97,7 @@ def test_decision_policy_hash_is_stable_and_changes_with_policy() -> None:
         activity_gap_quantile=0.2,
     )
 
-    assert DECISION_POLICY_VERSION == "activity-gap-v2"
+    assert DECISION_POLICY_VERSION == "activity-gap-v3"
     assert base == _decision_policy_sha256(
         medium_threshold=0.5,
         high_threshold=0.85,

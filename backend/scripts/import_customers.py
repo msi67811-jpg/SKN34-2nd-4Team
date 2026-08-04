@@ -6,8 +6,13 @@ import argparse
 from pathlib import Path
 
 from backend.app.config import PROJECT_ROOT, get_database_url
-from backend.app.customer_import import load_customer_rows, upsert_customers
+from backend.app.customer_import import (
+    delete_all_customers,
+    load_customer_rows,
+    upsert_customers,
+)
 from backend.app.database import initialize_database
+from backend.scripts.db_safety import validate_local_database
 
 
 DEFAULT_DATA_PATH = PROJECT_ROOT / "data" / "raw" / "BankChurners.csv"
@@ -21,6 +26,14 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_DATA_PATH,
         help="BankChurners 원본 CSV 경로",
     )
+    parser.add_argument(
+        "--replace",
+        action="store_true",
+        help=(
+            "적재 전 기존 customers와 연관 데이터(customer_insights/campaign_targets 등)를 "
+            "모두 삭제합니다. 로컬 DB에서만 허용됩니다."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -29,11 +42,15 @@ def main() -> None:
     database_url = get_database_url()
     if not database_url:
         raise RuntimeError("DATABASE_URL must be configured before importing customers.")
+    if args.replace:
+        validate_local_database(database_url)
 
     rows = load_customer_rows(args.data_path.resolve())
     engine, session_factory = initialize_database(database_url)
     try:
         with session_factory.begin() as session:
+            if args.replace:
+                delete_all_customers(session)
             summary = upsert_customers(session, rows)
     finally:
         engine.dispose()

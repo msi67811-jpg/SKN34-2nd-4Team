@@ -33,8 +33,12 @@ insights_router = APIRouter(
 )
 SortField = Literal[
     "churn_probability",
+    "actual_transaction_count",
     "activity_gap",
     "expected_transaction_count",
+    "total_trans_amt",
+    "card_category",
+    "contacts_count_12_mon",
     "scored_at",
 ]
 SortOrder = Literal["asc", "desc"]

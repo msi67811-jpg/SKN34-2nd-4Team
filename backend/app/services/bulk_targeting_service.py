@@ -42,10 +42,87 @@ from .campaign_service import (
 
 
 DEFAULT_CLUSTER_NAME = "우량(예상이상)"
+
+# 완납형(리볼빙 잔액 0)을 "이탈 임박"과 "우량"으로 가르는 연간 거래건수 기준입니다.
+# 원본 10,127명 검증: 55건 이상 1,480명은 이탈률 12.2%인 반면, 55건 미만 990명은
+# 72.0%로 갈립니다(train 11.6%/72.6%, test 13.5%/70.5%로 재현).
+FULL_PAYER_ACTIVE_TRANSACTIONS = 55
+# 소액 잔액 판정 상한과 거래 감소 판정 기준입니다.
+SMALL_BALANCE_LIMIT = 500
+TRANSACTION_DECLINE_RATIO = 0.6
+# 이탈률이 가장 낮은 리볼빙 잔액 구간입니다(4.6%, 전체 평균 16.1%).
+STABLE_BALANCE_MIN = 1_000
+STABLE_BALANCE_MAX = 2_000
+
+# 세그먼트 우선순위 — 값이 클수록 우선합니다.
+# "이미 동급 이상 우선순위 캠페인에 걸린 고객은 하위 세그먼트가 가져가지 않는다"는
+# 기존 규칙에 그대로 사용되므로, 신규 세그먼트를 추가할 때 여기에도 반드시 넣어야
+# 합니다(누락 시 미리보기 단계에서 KeyError).
+SEGMENT_TARGETING_PRIORITIES = {
+    # 실제 이탈률 약 90% — 가장 시급합니다.
+    BulkTargetingSegment.SMALL_BALANCE_DECLINE.value: 400,
+    # 실제 이탈률 72% — 고위험 예측군보다 앞세웁니다.
+    BulkTargetingSegment.DORMANT_FULL_PAYER.value: 350,
+    BulkTargetingSegment.HIGH_RISK_RETENTION.value: 300,
+    BulkTargetingSegment.MEDIUM_REACTIVATION.value: 200,
+    # 이탈률이 평균 이하인 우량군이라 리텐션 캠페인에 양보합니다.
+    BulkTargetingSegment.ACTIVE_FULL_PAYER.value: 120,
+    BulkTargetingSegment.LOW_RISK_UPSELL.value: 100,
+    BulkTargetingSegment.STABLE_PRIME.value: 90,
+}
+
 DEFAULT_CAMPAIGN_NAMES = {
     BulkTargetingSegment.HIGH_RISK_RETENTION.value: "고위험 고객 리텐션 일괄 캠페인",
     BulkTargetingSegment.MEDIUM_REACTIVATION.value: "중위험 고객 재활성화 일괄 캠페인",
     BulkTargetingSegment.LOW_RISK_UPSELL.value: "우량 고객 업셀링 일괄 캠페인",
+    BulkTargetingSegment.SMALL_BALANCE_DECLINE.value: "소액 잔액·거래 급감 긴급 컨택",
+    BulkTargetingSegment.DORMANT_FULL_PAYER.value: "완납형 저활동 고객 리텐션",
+    BulkTargetingSegment.ACTIVE_FULL_PAYER.value: "완납형 우량 고객 거래 활성화",
+    BulkTargetingSegment.STABLE_PRIME.value: "안정 우량 고객 업셀링",
+}
+
+# 캠페인 설명 = "왜 이 고객들을 골랐는가". 마케팅 담당자가 근거 없이 캠페인을
+# 집행하지 않도록, 선정 조건과 검증된 이탈률을 캠페인에 그대로 기록합니다.
+DEFAULT_CAMPAIGN_DESCRIPTIONS = {
+    BulkTargetingSegment.HIGH_RISK_RETENTION.value: (
+        "선정 근거: 이탈 예측 모델이 고위험(high)으로 분류한 고객입니다. "
+        "이탈 확률이 높은 순으로 우선 배정합니다."
+    ),
+    BulkTargetingSegment.MEDIUM_REACTIVATION.value: (
+        "선정 근거: 중위험(medium)이면서 활동성 갭이 하위 분위수에 속하는 고객입니다. "
+        "예상 대비 거래가 줄어든 정도가 큰 순으로 배정합니다."
+    ),
+    BulkTargetingSegment.LOW_RISK_UPSELL.value: (
+        "선정 근거: 저위험(low)이면서 '우량(예상이상)' 군집에 속하는 고객입니다. "
+        "예상 거래 건수가 많은 순으로 배정합니다."
+    ),
+    BulkTargetingSegment.SMALL_BALANCE_DECLINE.value: (
+        f"선정 근거: 리볼빙 잔액이 1~{SMALL_BALANCE_LIMIT - 1}원으로 소액인데 분기 거래건수가 "
+        f"{TRANSACTION_DECLINE_RATIO}배 미만으로 급감한 고객입니다. "
+        "이 조건의 실제 이탈률은 약 90% 전체 평균 16.1%의 5배가 넘습니다."
+        " 대상 수는 적지만 이탈이 임박한 신호이므로 "
+        "가장 먼저 컨택합니다."
+    ),
+    BulkTargetingSegment.DORMANT_FULL_PAYER.value: (
+        f"선정 근거: 리볼빙 잔액이 0원(완납)이면서 연간 거래가 "
+        f"{FULL_PAYER_ACTIVE_TRANSACTIONS}건 미만인 고객입니다. "
+        "완납 고객 전체의 실제 이탈률은 36.2%인데, 그중 거래가 저조한 이 그룹만 보면 "
+        "72.0%로 치솟습니다 잔액이 없어 전환 비용이 없고 "
+        "카드 사용도 줄어든 상태라 이탈 직전으로 판단합니다."
+    ),
+    BulkTargetingSegment.ACTIVE_FULL_PAYER.value: (
+        f"선정 근거: 리볼빙 잔액이 0원(완납)이지만 연간 거래가 "
+        f"{FULL_PAYER_ACTIVE_TRANSACTIONS}건 이상인 고객입니다. "
+        "같은 완납 고객이라도 거래가 활발하면 실제 이탈률이 12.2%로 전체 평균(16.1%)보다 "
+        "낮습니다. 이미 안정적인 고객이므로 리볼빙 잔액을 늘리도록 유도하지 않고, "
+        "거래 리워드와 상품 교차판매로 관계를 넓히는 것을 목표로 합니다."
+    ),
+    BulkTargetingSegment.STABLE_PRIME.value: (
+        f"선정 근거: 리볼빙 잔액이 {STABLE_BALANCE_MIN:,}~{STABLE_BALANCE_MAX:,}원 구간인 고객입니다. "
+        "이 구간의 실제 이탈률은 4.6%로 전체 잔액 구간 중 가장 낮습니다. "
+        "잔액이 0원이거나 2,000원을 넘으면 이탈률이 다시 올라가므로(각 36.2%, 15.3%) "
+        "이 구간을 유지시키는 것이 목표이며, 한도 상향·프리미엄 전환 제안에 적합합니다."
+    ),
 }
 
 
@@ -184,7 +261,9 @@ def _build_rules(
     rules: dict[str, Any] = {
         "segment": segment,
         "campaign_name": payload.campaign_name or DEFAULT_CAMPAIGN_NAMES[segment],
-        "description": payload.description,
+        # 사용자가 설명을 비워두면 세그먼트 선정 근거를 기본값으로 남깁니다 —
+        # 나중에 캠페인 목록만 봐도 "왜 이 고객들인가"를 알 수 있어야 합니다.
+        "description": payload.description or DEFAULT_CAMPAIGN_DESCRIPTIONS.get(segment),
         "channel": payload.channel,
         "assigned_to_user_id": payload.assigned_to_user_id,
         "recent_contact_days": payload.recent_contact_days,
@@ -236,6 +315,29 @@ def _segment_condition(rules: dict[str, Any]) -> Any:
             CustomerInsight.risk_level == RiskLevel.LOW.value,
             CustomerInsight.cluster_name == str(rules["cluster_name"]),
         )
+    # 아래 4종은 예측 위험도가 아니라 고객 원본 지표로 판정합니다.
+    # 분류 모델의 확률 분포에 의존하지 않아 배치 결과가 흔들려도 대상이 유지됩니다.
+    if segment == BulkTargetingSegment.SMALL_BALANCE_DECLINE.value:
+        return (
+            Customer.total_revolving_bal > 0,
+            Customer.total_revolving_bal < SMALL_BALANCE_LIMIT,
+            Customer.total_ct_chng_q4_q1 < TRANSACTION_DECLINE_RATIO,
+        )
+    if segment == BulkTargetingSegment.DORMANT_FULL_PAYER.value:
+        return (
+            Customer.total_revolving_bal == 0,
+            Customer.total_trans_ct < FULL_PAYER_ACTIVE_TRANSACTIONS,
+        )
+    if segment == BulkTargetingSegment.ACTIVE_FULL_PAYER.value:
+        return (
+            Customer.total_revolving_bal == 0,
+            Customer.total_trans_ct >= FULL_PAYER_ACTIVE_TRANSACTIONS,
+        )
+    if segment == BulkTargetingSegment.STABLE_PRIME.value:
+        return (
+            Customer.total_revolving_bal >= STABLE_BALANCE_MIN,
+            Customer.total_revolving_bal < STABLE_BALANCE_MAX,
+        )
     raise BulkTargetingDomainError(f"Unsupported targeting segment: {segment}.")
 
 
@@ -262,15 +364,12 @@ def _candidate_query(
         days=int(rules["recent_contact_days"])
     )
 
-    segment_priority = {
-        BulkTargetingSegment.HIGH_RISK_RETENTION.value: 300,
-        BulkTargetingSegment.MEDIUM_REACTIVATION.value: 200,
-        BulkTargetingSegment.LOW_RISK_UPSELL.value: 100,
-    }[str(rules["segment"])]
+    segment_priority = SEGMENT_TARGETING_PRIORITIES[str(rules["segment"])]
     existing_priority = case(
-        (Campaign.segment_code == BulkTargetingSegment.HIGH_RISK_RETENTION.value, 300),
-        (Campaign.segment_code == BulkTargetingSegment.MEDIUM_REACTIVATION.value, 200),
-        (Campaign.segment_code == BulkTargetingSegment.LOW_RISK_UPSELL.value, 100),
+        *(
+            (Campaign.segment_code == segment_code, priority)
+            for segment_code, priority in SEGMENT_TARGETING_PRIORITIES.items()
+        ),
         # 수동·미분류 캠페인은 의도 확인 없이 자동 취소하지 않습니다.
         else_=1000,
     )
@@ -343,6 +442,26 @@ def _candidate_query(
             CustomerInsight.activity_gap.asc(),
             CustomerInsight.churn_probability.desc(),
             CustomerInsight.scored_at.desc(),
+        )
+    elif segment in {
+        BulkTargetingSegment.SMALL_BALANCE_DECLINE.value,
+        BulkTargetingSegment.DORMANT_FULL_PAYER.value,
+    }:
+        # 이탈 임박 세그먼트 — 거래가 가장 적게 남은 고객부터 컨택합니다.
+        query = query.order_by(
+            Customer.total_trans_ct.asc(),
+            Customer.total_ct_chng_q4_q1.asc(),
+            CustomerInsight.churn_probability.desc(),
+        )
+    elif segment in {
+        BulkTargetingSegment.ACTIVE_FULL_PAYER.value,
+        BulkTargetingSegment.STABLE_PRIME.value,
+    }:
+        # 업셀·활성화 세그먼트 — 거래가 가장 활발한 고객부터 제안합니다.
+        query = query.order_by(
+            Customer.total_trans_ct.desc(),
+            Customer.total_trans_amt.desc(),
+            CustomerInsight.churn_probability.asc(),
         )
     else:
         query = query.order_by(

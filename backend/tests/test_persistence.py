@@ -111,7 +111,7 @@ def test_migrations_create_complete_schema(tmp_path: Path) -> None:
             for column in inspector.get_columns("scoring_batches")
         }
         assert {"reuse_key_sha256", "attempt_number"} <= scoring_batch_columns
-        assert revision == "20260802_0010"
+        assert revision == "20260804_0011"
     finally:
         engine.dispose()
 

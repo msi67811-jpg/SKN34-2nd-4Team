@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import Select, case, desc, exists, false, func, or_, select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session, aliased, selectinload
 
 from ..enums import CampaignStatus, RiskLevel
 from ..models import Campaign, CampaignTarget, Customer, CustomerInsight
@@ -225,14 +225,44 @@ def fetch_insight_page(
 
     sort_column = {
         "churn_probability": CustomerInsight.churn_probability,
+        "actual_transaction_count": CustomerInsight.expected_transaction_count + CustomerInsight.activity_gap,
         "activity_gap": CustomerInsight.activity_gap,
         "expected_transaction_count": CustomerInsight.expected_transaction_count,
         "scored_at": CustomerInsight.scored_at,
-    }[sort_by]
-    ordered_query = query.order_by(
-        sort_column.asc() if sort_order == "asc" else sort_column.desc(),
-        CustomerInsight.id.desc(),
-    )
+    }.get(sort_by)
+
+    card_category_rank = {
+        "Blue": 1,
+        "Silver": 2,
+        "Gold": 3,
+        "Platinum": 4,
+    }
+
+    def _card_category_rank(customer: Customer):
+        """카드 등급을 알파벳순이 아니라 실제 등급 순서(낮음→높음)로 정렬합니다."""
+        return case(card_category_rank, value=customer.card_category, else_=0)
+
+    customer_sort_columns = {
+        "total_trans_amt": lambda customer: customer.total_trans_amt,
+        "card_category": _card_category_rank,
+        "contacts_count_12_mon": lambda customer: customer.contacts_count_12_mon,
+    }
+
+    if sort_by in customer_sort_columns:
+        sort_customer = aliased(Customer)
+        customer_sort_column = customer_sort_columns[sort_by](sort_customer)
+        ordered_query = query.join(
+            sort_customer,
+            sort_customer.customer_id == CustomerInsight.customer_id,
+        ).order_by(
+            customer_sort_column.asc() if sort_order == "asc" else customer_sort_column.desc(),
+            CustomerInsight.id.desc(),
+        )
+    else:
+        ordered_query = query.order_by(
+            sort_column.asc() if sort_order == "asc" else sort_column.desc(),
+            CustomerInsight.id.desc(),
+        )
     items = db.scalars(
         ordered_query
         .options(selectinload(CustomerInsight.customer))
@@ -275,6 +305,7 @@ def fetch_customer_insight_history(
     return db.scalars(
         select(CustomerInsight)
         .where(CustomerInsight.customer_id == customer_id)
+        .options(selectinload(CustomerInsight.customer))
         .order_by(
             CustomerInsight.as_of_date.desc(),
             CustomerInsight.scored_at.desc(),

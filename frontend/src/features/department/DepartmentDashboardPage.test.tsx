@@ -168,10 +168,9 @@ describe("부서별 대시보드", () => {
     const fetchMock = departmentFetchMock();
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<DepartmentDashboardPage user={operationsUser} onLoggedOut={vi.fn()} />);
+    render(<DepartmentDashboardPage user={operationsUser} />);
 
-    expect(await screen.findByRole("heading", { name: "운영 업무 센터" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "우선 관리 고객" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "우선 관리 고객" })).toBeInTheDocument();
     expect(screen.getByText("42명")).toBeInTheDocument();
     expect(screen.getByText("1–8 / 42명")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "리텐션 등록" })).not.toBeInTheDocument();
@@ -185,7 +184,7 @@ describe("부서별 대시보드", () => {
     const fetchMock = departmentFetchMock(false, false, false, 168, 21);
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<DepartmentDashboardPage user={operationsUser} onLoggedOut={vi.fn()} />);
+    render(<DepartmentDashboardPage user={operationsUser} />);
 
     expect(await screen.findByRole("heading", { name: "우선 관리 고객" })).toBeInTheDocument();
     for (let page = 1; page <= 10; page += 1) {
@@ -205,10 +204,9 @@ describe("부서별 대시보드", () => {
     const fetchMock = departmentFetchMock();
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<DepartmentDashboardPage user={marketingUser} onLoggedOut={vi.fn()} />);
+    render(<DepartmentDashboardPage user={marketingUser} />);
 
-    expect(await screen.findByRole("heading", { name: "마케팅 캠페인 센터" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "캠페인 후보 고객" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "캠페인 후보 고객" })).toBeInTheDocument();
     expect(screen.getByText("42명")).toBeInTheDocument();
     expect(screen.getByText("1–8 / 42명")).toBeInTheDocument();
     await waitFor(() => expect(fetchMock.mock.calls.some(([input]) => String(input).includes("campaign_candidates_only=true"))).toBe(true));
@@ -234,7 +232,7 @@ describe("부서별 대시보드", () => {
     const fetchMock = departmentFetchMock(false, false, true);
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<DepartmentDashboardPage user={operationsUser} onLoggedOut={vi.fn()} />);
+    render(<DepartmentDashboardPage user={operationsUser} />);
 
     expect(await screen.findByRole("heading", { name: "캠페인 처리 현황" })).toBeInTheDocument();
     expect(screen.queryByRole("checkbox", { name: "전환" })).not.toBeInTheDocument();
@@ -267,7 +265,7 @@ describe("부서별 대시보드", () => {
     const fetchMock = departmentFetchMock(false, false, true, 42, 6, "contacted");
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<DepartmentDashboardPage user={operationsUser} onLoggedOut={vi.fn()} />);
+    render(<DepartmentDashboardPage user={operationsUser} />);
 
     expect(await screen.findByRole("heading", { name: "캠페인 처리 현황" })).toBeInTheDocument();
     fireEvent.change(screen.getByRole("combobox", { name: "1001 처리 상태" }), {
@@ -287,7 +285,7 @@ describe("부서별 대시보드", () => {
   it("유지 관측기간 오류를 한국어 다이얼로그로 표시합니다", async () => {
     vi.stubGlobal("fetch", departmentFetchMock(false, false, true, 42, 6, "completed", true));
 
-    render(<DepartmentDashboardPage user={operationsUser} onLoggedOut={vi.fn()} />);
+    render(<DepartmentDashboardPage user={operationsUser} />);
 
     expect(await screen.findByRole("heading", { name: "캠페인 처리 현황" })).toBeInTheDocument();
     fireEvent.change(screen.getByRole("combobox", { name: "1001 결과 코드" }), {
@@ -308,25 +306,20 @@ describe("부서별 대시보드", () => {
     const fetchMock = departmentFetchMock();
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<DepartmentDashboardPage user={marketingUser} onLoggedOut={vi.fn()} />);
+    render(<DepartmentDashboardPage user={marketingUser} />);
 
     expect(await screen.findByRole("heading", { name: "캠페인 후보 고객" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "캠페인 등록" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "캠페인 관리" })).not.toBeInTheDocument();
   });
 
   it("관리자는 팀 계정과 권한 현황을 봅니다", async () => {
     vi.stubGlobal("fetch", departmentFetchMock(true));
-    const onOpenDashboard = vi.fn();
 
-    render(<DepartmentDashboardPage user={adminUser} onLoggedOut={vi.fn()} onOpenDashboard={onOpenDashboard} />);
+    render(<DepartmentDashboardPage user={adminUser} />);
 
-    expect(await screen.findByRole("heading", { name: "관리자 콘솔" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "활성 팀 계정" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "활성 팀 계정" })).toBeInTheDocument();
     expect(screen.getByText("운영팀")).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "관리자 역할" })).toBeDisabled();
     expect(screen.queryByText("역할별 업무 권한")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "고객 분석 대시보드" }));
-    expect(onOpenDashboard).toHaveBeenCalledOnce();
   });
 });

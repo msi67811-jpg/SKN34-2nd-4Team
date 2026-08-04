@@ -8,12 +8,19 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.mysql import insert as mysql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
-from .models import Customer
+from .models import (
+    BulkTargetingCandidateSnapshot,
+    CampaignEvent,
+    CampaignTarget,
+    Customer,
+    CustomerFeatureSnapshot,
+    CustomerInsight,
+)
 
 
 RAW_FIELD_MAP = {
@@ -163,6 +170,21 @@ def _execute_upsert(session: Session, rows: list[dict[str, Any]]) -> None:
 
     for row in rows:
         session.merge(Customer(**row))
+
+
+def delete_all_customers(session: Session) -> None:
+    """customers와 FK로 연결된 모든 데이터를 삭제합니다(운영 데이터 전체 교체용).
+
+    customer_insights/campaign_targets/bulk_targeting_candidates 등은 일부가
+    RESTRICT 관계로 얽혀 있어, DB의 FK cascade 설정과 무관하게 안전하도록
+    자식 → 부모 순서로 명시적으로 지웁니다.
+    """
+    session.execute(delete(BulkTargetingCandidateSnapshot))
+    session.execute(delete(CampaignEvent).where(CampaignEvent.campaign_target_id.is_not(None)))
+    session.execute(delete(CampaignTarget))
+    session.execute(delete(CustomerInsight))
+    session.execute(delete(CustomerFeatureSnapshot))
+    session.execute(delete(Customer))
 
 
 def upsert_customers(

@@ -581,6 +581,50 @@ button {
   background: #ededff;
 }
 
+/* AppShell의 워크스페이스 전환 버튼(현재 위치 표시) */
+.dashboard-nav-button.is-active {
+  color: #ffffff;
+  border-color: var(--navy);
+  background: var(--navy);
+  cursor: default;
+}
+
+/* 분석 대시보드 내부 탭 — 고객 인사이트 / EDA 차트 */
+.dashboard-tabs {
+  display: flex;
+  width: min(1280px, 100%);
+  gap: 8px;
+  margin: 16px auto 0;
+}
+
+.dashboard-tab {
+  min-height: 38px;
+  padding: 0 18px;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.dashboard-tab:hover {
+  border-color: #c9cbf2;
+  background: #f5f5ff;
+}
+
+.dashboard-tab--active {
+  color: #ffffff;
+  border-color: transparent;
+  background: var(--primary);
+}
+
+.dashboard-tab--active:hover {
+  background: var(--primary-dark);
+}
+
 .dashboard-placeholder {
   width: min(1280px, 100%);
   margin: 28px auto 0;
@@ -1301,7 +1345,6 @@ button {
   box-shadow: 0 0 0 3px rgba(85, 88, 220, 0.1);
 }
 
-.sort-order-button,
 .reset-filter-button {
   height: 36px;
   padding: 0 11px;
@@ -1313,14 +1356,6 @@ button {
   cursor: pointer;
 }
 
-.sort-order-button {
-  width: 36px;
-  padding: 0;
-  color: var(--primary);
-  font-size: 18px;
-}
-
-.sort-order-button:hover,
 .reset-filter-button:hover {
   border-color: #afb3eb;
   background: #f8f8ff;
@@ -1333,7 +1368,7 @@ button {
 .insight-list__header,
 .insight-row {
   display: grid;
-  grid-template-columns: 1.05fr 0.75fr 0.8fr 0.75fr 0.85fr 1.15fr 1.5fr 24px;
+  grid-template-columns: 1.05fr 0.75fr 0.8fr 0.85fr 0.85fr 0.75fr 0.95fr 0.75fr 0.75fr 1.15fr 1.5fr 24px;
   align-items: center;
   gap: 12px;
 }
@@ -1343,6 +1378,32 @@ button {
   color: #9aa1b4;
   font-size: 9px;
   font-weight: 750;
+}
+
+.insight-header-sort {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  color: inherit;
+  border: none;
+  background: none;
+  font: inherit;
+  font-weight: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.insight-header-sort:hover {
+  color: var(--primary);
+}
+
+.insight-header-sort--active {
+  color: var(--primary);
+}
+
+.insight-header-sort__arrow {
+  font-size: 8px;
 }
 
 .insight-row {
@@ -1386,7 +1447,11 @@ button {
 
 .insight-row__cluster,
 .insight-row__gap,
+.insight-row__actual,
 .insight-row__expected,
+.insight-row__amount,
+.insight-row__card,
+.insight-row__contacts,
 .insight-row__action {
   overflow: hidden;
   color: #626b87;
@@ -1396,7 +1461,11 @@ button {
 }
 
 .insight-row__gap,
-.insight-row__expected {
+.insight-row__actual,
+.insight-row__expected,
+.insight-row__amount,
+.insight-row__card,
+.insight-row__contacts {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -1406,7 +1475,9 @@ button {
   color: #c65265;
 }
 
-.insight-row__expected {
+.insight-row__actual,
+.insight-row__expected,
+.insight-row__amount {
   color: #4d658f;
 }
 
@@ -1454,9 +1525,9 @@ button {
 }
 
 .pagination {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  justify-content: space-between;
   margin-top: 18px;
   padding: 14px 14px 0;
   color: #9299ac;
@@ -1464,33 +1535,52 @@ button {
   font-size: 10px;
 }
 
-.pagination > div {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.pagination__summary {
+  justify-self: start;
 }
 
-.pagination button {
+.pagination__pages {
+  display: flex;
+  align-items: center;
+  justify-self: center;
+  gap: 6px;
+}
+
+.pagination__page,
+.pagination__arrow {
   display: grid;
-  width: 28px;
+  min-width: 28px;
   height: 28px;
+  padding: 0 6px;
   place-items: center;
   color: var(--primary);
   border: 1px solid #e0e2f5;
   border-radius: 8px;
   background: #ffffff;
   cursor: pointer;
+  font-size: 11px;
 }
 
-.pagination button:disabled {
+.pagination__arrow {
+  margin: 0 4px;
+}
+
+.pagination__arrow:disabled {
   color: #c5c9d5;
   cursor: not-allowed;
   background: #f7f8fb;
 }
 
-.pagination strong {
-  color: var(--navy);
-  font-size: 11px;
+.pagination__page--active {
+  color: #ffffff;
+  border-color: var(--primary);
+  background: var(--primary);
+  font-weight: 700;
+}
+
+.pagination__ellipsis {
+  color: #c5c9d5;
+  padding: 0 2px;
 }
 
 .empty-state,
@@ -2627,6 +2717,36 @@ button {
   gap: 10px;
 }
 
+.campaign-detail-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 20px;
+}
+
+.campaign-detail-tab {
+  padding: 7px 14px;
+  border: 1px solid #eef0f6;
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.campaign-detail-tab:hover {
+  border-color: var(--navy);
+  color: var(--navy);
+}
+
+.campaign-detail-tab.is-active {
+  background: var(--navy);
+  border-color: var(--navy);
+  color: #ffffff;
+}
+
 .campaign-management-stats {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -2757,10 +2877,37 @@ button {
 }
 
 .campaign-performance-comparisons {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
   margin-top: 20px;
+}
+
+.campaign-performance-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.campaign-performance-tab {
+  padding: 7px 14px;
+  border: 1px solid #eef0f6;
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.campaign-performance-tab:hover {
+  border-color: var(--navy);
+  color: var(--navy);
+}
+
+.campaign-performance-tab.is-active {
+  background: var(--navy);
+  border-color: var(--navy);
+  color: #ffffff;
 }
 
 .campaign-performance-breakdown {
@@ -2807,6 +2954,9 @@ button {
 .campaign-performance-table tbody th {
   color: var(--navy);
   font-weight: 750;
+  text-align: left;
+}
+.campaign-performance-table tbody td {
   text-align: left;
 }
 
@@ -3930,7 +4080,11 @@ button {
 
   .insight-row__cluster,
   .insight-row__gap,
+  .insight-row__actual,
   .insight-row__expected,
+  .insight-row__amount,
+  .insight-row__card,
+  .insight-row__contacts,
   .insight-row__action {
     display: none;
   }
@@ -4114,8 +4268,7 @@ button {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .campaign-performance-cards,
-  .campaign-performance-comparisons {
+  .campaign-performance-cards {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -4141,8 +4294,7 @@ button {
 }
 
 @media (max-width: 480px) {
-  .campaign-performance-cards,
-  .campaign-performance-comparisons {
+  .campaign-performance-cards {
     grid-template-columns: 1fr;
   }
 }
@@ -4220,6 +4372,104 @@ button {
 
   .dashboard-placeholder h2 {
     font-size: 19px;
+  }
+}
+
+.bento-card--eda {
+  grid-column: 1 / -1;
+  padding: 28px;
+}
+
+.eda-charts-intro {
+  max-width: 760px;
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.eda-charts-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.eda-chart-card {
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #fafaff;
+}
+
+.eda-chart-card--wide {
+  grid-column: 1 / -1;
+}
+
+.eda-chart-card__header {
+  margin-bottom: 4px;
+}
+
+.eda-chart-card h3 {
+  margin: 4px 0 0;
+  color: var(--navy);
+  font-size: 15px;
+  letter-spacing: -0.02em;
+}
+
+.eda-chart-card select {
+  height: 28px;
+  padding: 0 8px;
+  color: var(--navy);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  font-size: 11px;
+}
+
+.eda-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 6px;
+}
+
+.eda-chart-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.eda-chart-legend i {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.eda-boxplot-tooltip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 8px 20px rgba(36, 45, 88, 0.12);
+  font-size: 11px;
+}
+
+.eda-boxplot-tooltip strong {
+  margin-bottom: 2px;
+  color: var(--navy);
+}
+
+@media (max-width: 900px) {
+  .eda-charts-grid {
+    grid-template-columns: 1fr;
   }
 }
 
